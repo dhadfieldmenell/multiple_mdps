@@ -29,7 +29,7 @@ def compare(outf = SPUDD_OUTF, n_trials=30, mdp_type='grid'):
     n_mdps = [2, 3, 4, 5, 6]#, 7, 8, 9, 10, 11, 12, 13, 14]
 
     do_spudd = True
-    do_singh_cohn = True
+    do_singh_cohn = False#True
     do_lrtdp_wi = True
     do_lrtdp_singh_cohn = True
 
@@ -100,9 +100,17 @@ def compare(outf = SPUDD_OUTF, n_trials=30, mdp_type='grid'):
             if do_spudd:
                 write_spudd_model(m.component_mdps, SPUDD_FNAME)
                 start = time.time()
-                res = subprocess.Popen([SPUDD_LOC, SPUDD_FNAME]).wait()
-                time_taken = time.time() - start
-                if res >= 0:
+                p = subprocess.Popen([SPUDD_LOC, SPUDD_FNAME])
+                while True:
+                    time.sleep(.01)                    
+                    res = p.poll()
+                    if res is not None:
+                        break
+                    time_taken = time.time() - start
+                    if time_taken > 1000:
+                        p.terminate()
+                        break
+                if res is not None and res >= 0:
                     result_g['spudd_times'][i] = time_taken
                     print 'SPUDD {}'.format(time_taken)
                 else:
@@ -131,7 +139,7 @@ def compare(outf = SPUDD_OUTF, n_trials=30, mdp_type='grid'):
 
             if do_lrtdp_wi:
                 start = time.time()
-                converged, best_a = lrtdp.lrtdp(m, start_state, max_iter=10000, use_wi=True)
+                converged, best_a = lrtdp.lrtdp(m, start_state, max_iter=10000, use_wi=True, max_t=1000)
                 time_taken = time.time() - start
                 if converged:
                     result_g['lrtdp_wi_times'][i] = time_taken
@@ -141,13 +149,23 @@ def compare(outf = SPUDD_OUTF, n_trials=30, mdp_type='grid'):
 
             if do_lrtdp_singh_cohn:
                 start = time.time()
-                converged, best_a = lrtdp.lrtdp(m, start_state, max_iter=10000, use_wi=False)
+                converged, best_a = lrtdp.lrtdp(m, start_state, max_iter=10000, use_wi=False, max_t=1000)
                 time_taken = time.time() - start
                 if converged:
                     result_g['lrtdp_singh_cohn_times'][i] = time_taken
                     print "LRTDP_SINGH_COHN {}                  ".format(time_taken)
                 else:
                     print "LRTDP_SINGH_COHN DID NOT CONVERGE"
+
+            # if do_lrtdp_h_inf:
+            #     start = time.time()
+            #     converged, best_a = lrtdp.lrtdp(m, start_state, max_iter=10000, use_wi=False)
+            #     time_taken = time.time() - start
+            #     if converged:
+            #         result_g['lrtdp_singh_cohn_times'][i] = time_taken
+            #         print "LRTDP_SINGH_COHN {}                  ".format(time_taken)
+            #     else:
+            #         print "LRTDP_SINGH_COHN DID NOT CONVERGE"
                 
 
         do_spudd = not np.all(result_g['spudd_times'][:] == -1)

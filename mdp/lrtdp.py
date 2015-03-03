@@ -2,7 +2,7 @@ from __future__ import division
 
 import numpy as np
 
-import sys
+import sys, time
 
 eps = 1e-8
 
@@ -87,15 +87,19 @@ class SearchNode(object):
                 s.update()
         return converged
 
-def lrtdp(mdp, start_state, tol=eps, use_wi=False, max_iter=100):
+def lrtdp(mdp, start_state, tol=eps, use_wi=False, max_iter=100, max_t=None):
     
     sim_len = int(np.ceil(np.log(tol) / np.log(mdp.gamma)))
 
     SearchNode.USE_WI=use_wi
     SearchNode.NODE_REGISTER={}
+    if max_t is not None:
+        start = time.time()
     
     root = SearchNode(start_state, mdp)
     for _ in range(max_iter):
+        if max_t is not None and time.time() - start > max_t:
+            break
         if root.solved:
             break
         sys.stdout.write("Root Residual:\t{}\r".format(root.residual()))
