@@ -1,3 +1,5 @@
+from __future__ import division
+
 import mdp_base as mdp
 reload(mdp)
 import numpy as np
@@ -10,6 +12,53 @@ import IPython as ipy
 from pdb import pm
 import sys, time
 import argparse, h5py, socket
+
+def r_and_d_mdp(R_success, safe_wait_p, risky_wait_p, risky_success_p):
+    """
+    States: state wait_safe wait_risky produce_safe produce_risky_success produce_risky_fail
+    """
+    T = {}
+    R = {}
+    num_states = 6
+    actions = ['safe', 'risky']
+    rewards = np.array([0, 0, 0, R_success, R_success, 0])
+    t_safe = np.array([[0, 1, 0, 0, 0, 0],
+                       [0, safe_wait_p, 0, 1 - safe_wait_p, 0, 0],
+                       [0, 0, risky_wait_p, 0, risky_success_p, 1-risky_wait_p-risky_success_p],
+                       [0, 0, 0, 1, 0, 0],
+                       [0, 0, 0, 0, 1, 0],
+                       [0, 0, 0, 0, 0, 1]])
+    t_risky = t_safe.copy()
+    t_risky[0, 1] = 0
+    t_risky[0, 2] = 1
+    T['safe'] = t_safe
+    T['risky'] = t_risky
+    R['safe'] = rewards
+    R['risky'] = rewards
+    # print T['safe']
+    # print T['risky']
+    # print R
+    return mdp.MDP(actions, num_states, T, R, 0.9)
+
+def multiple_r_and_d_mdp(seeds, gamma):
+    try:
+        N = len(seeds)
+    except TypeError:
+        N = seeds
+        seeds = None
+    params = []
+    for i in range(N):
+        if seeds:
+            random.seed(seeds[i])
+        p = {}
+        p['R_success'] = random.random()
+        p['safe_wait_p'] = 0.75
+        p['risky_wait_p'] = 0.5
+        # p['risky_success_p'] = (np.random.rand() / 2 + 0.5) * (1 - p['risky_wait_p'])
+        p['risky_success_p'] = (0.8) * (1 - p['risky_wait_p'])
+        params.append(p)
+    c_mdps = [r_and_d_mdp(**p) for p in params]
+    return mdp.MultipleMDP(c_mdps, gamma)
 
 def deterministic_chain_mdp(num_states=3, rewards=None):
     if not rewards:

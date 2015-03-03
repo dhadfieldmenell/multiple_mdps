@@ -316,7 +316,7 @@ class MDP(object):
         self.wc_actions = {}
         num_pruned = 0
         for s in range(self.num_states):
-            if len(state_action_map[s]) == 1:
+            if len(state_action_map[s]) <= 1:
                 # if there's just one then we can prune everything else
 
                 num_pruned += 1
@@ -542,6 +542,19 @@ class MultipleMDP(object):
             return (wi_val, lb_wi)
         return wi_val
 
+    def greedy_a(self, state):
+        if not util.isIterable(state):
+            # switch to factored representation
+            state = self.index_to_factored_state(state)
+        best_gi = -np.inf
+        for i, (m_i, s_i) in enumerate(zip(self.lb_mdp.component_mdps, state)):
+            if m_i.gittins_indices[s_i] > best_gi:
+                best_a = self.component_mdps[i].opt_policy[s_i]
+                best_i = i
+                best_gi = m_i.gittins_indices[s_i]
+        return "{}_{}".format(best_a, best_i)
+
+
     def singh_cohn_bounds(self, state):
         # set_trace()
         if not util.isIterable(state):
@@ -560,13 +573,13 @@ class MultipleMDP(object):
         return int(s_i)
 
     def index_to_factored_state(self, s_i):
-        s_result = np.zeros(self.num_components)
+        s_result = np.zeros(self.num_components, dtype=np.int)
         for i in reversed(range(len(self.component_mdps))):
             num_states = self.component_mdps[i].num_states
             s_i_new = s_i/num_states
             s_result[i] = s_i - s_i_new*num_states
             s_i = s_i_new
-        return s_result
+        return tuple(s_result.tolist())
 
     def action_to_component(self, a):
         a_split = a.split('_')
@@ -678,6 +691,7 @@ class MultipleMDP(object):
         self.opt_policy = [util.argmax(self.actions, 
                                     lambda x: self.eval_action(s, x, self.value_fn))
                                     for s in range(self.num_states)]
-        return self.opt_policy                                          
+        return self.opt_policy
+
 
                 

@@ -32,19 +32,21 @@ class SearchNode(object):
     node in our search tree
     """
 
-    def __init__(self, state, mdp, use_wi=True):
+    def __init__(self, state, mdp, use_wi=True, compute_bounds=True):
         self.state = state
         self.mdp = mdp # assumes that mdp.sparse_transitions has already been computed
         self.expanded = False
         self.parent_actions = set()
-        self.children = {} # mapping from actions to linear combination of states that represents constraints
+        # mapping from actions to linear combination of states that represents constraints
+        self.children = {} 
         self.use_wi = use_wi
-        if use_wi:
-            (self.upper_bound, self.lower_bound) = \
-                self.mdp.whittle_integral(state, compute_lb = True)
-        else:
-            (self.upper_bound, self.lower_bound) = \
-                self.mdp.singh_cohn_bounds(state)
+        if compute_bounds:
+            if use_wi:
+                (self.upper_bound, self.lower_bound) = \
+                    self.mdp.whittle_integral(state, compute_lb = True)
+            else:
+                (self.upper_bound, self.lower_bound) = \
+                    self.mdp.singh_cohn_bounds(state)
 
     # @profile
     def expand(self, known_states):
@@ -81,13 +83,15 @@ class SearchNode(object):
         lbs = [self.action_lb(a) for a in sorted(self.children.keys())]        
         best_i = np.argmax(lbs)
         best_a = sorted(self.children.keys())[best_i]
+        self.lower_bound = lbs[best_i]
         return best_a
 
     def best_ub_action(self, second_best = False):
         assert self.expanded
         ubs = [self.action_ub(a) for a in sorted(self.children.keys())]
-        best_i = np.argmax(ubs)
+        best_i = np.argmin(ubs)
         best_a = sorted(self.children.keys())[best_i]
+        self.upper_bound = ubs[best_i]
         return best_a
         
     def prune(self):
@@ -384,6 +388,8 @@ def expand_loop(frontier, explored_nodes, min_hval, active_states, verbose, max_
 def local_search_vi(mdp, start_state, tolerance = eps, expand_rate = 100, verbose = False,
                     semi_verbose = False, max_expand = 100, explored_nodes = None, use_wi=True,
                     min_hval_decrease_rate = None):
+
+
     if explored_nodes == None:
         root = SearchNode(start_state, mdp, use_wi=use_wi)
         # root = SearchNode(start_state, mdp, True)
@@ -412,6 +418,12 @@ def local_search_vi(mdp, start_state, tolerance = eps, expand_rate = 100, verbos
                 print "\nnot converged potential suboptimality of", potential_subopt
             return False, potential_subopt
         return True, potential_subopt
+
+    init_lb = root.lower_bound
+    init_ub = root.upper_bound
+    greedy_action = mdp.greedy_a(start_state)
+
+
     frontier = u.HeapPQ()
     if not root.expanded:
         new_nodes = root.expand(explored_nodes)
@@ -424,7 +436,8 @@ def local_search_vi(mdp, start_state, tolerance = eps, expand_rate = 100, verbos
 
     active_states = explored_nodes
 
-    num_expanded = 0
+
+    num_expanded = 1
     prev_print_val = 0
     min_hval = 1e-2
     if min_hval_decrease_rate is None:
@@ -442,6 +455,8 @@ def local_search_vi(mdp, start_state, tolerance = eps, expand_rate = 100, verbos
         if verbose or semi_verbose:
             print '\ncurrent nodes expanded:\t', new_expansions
             print "total nodes expanded:\t", num_expanded
+            print "lower bound value:\t{}\twithout search:\t{}".format(root.lower_bound, init_lb)
+            print "best action:\t{}\tgreedy action:\t{}".format(root.best_lb_action(), greedy_action)
 
         if num_expanded - prev_print_val > 500:
             print 'num expansions:\t{}'.format(num_expanded)
@@ -503,9 +518,17 @@ def local_search_vi(mdp, start_state, tolerance = eps, expand_rate = 100, verbos
             reachable_states += 1
         if semi_verbose or verbose: print 'reachable states:\t', reachable_states
     _converged, sub_optimality = converged()
-    print "converged?:\t", _converged
+    ubs = [root.action_ub(a) for a in sorted(root.children.keys())]
+    lbs = [root.action_lb(a) for a in sorted(root.children.keys())]
+
+    print "search returned init action:\t{}\twithout search:\t{}".format(root.best_lb_action(), greedy_action)
+    print "converged?:\t{}\tafter {} expansions".format(_converged, num_expanded)
+    print "lower bound value:\t{}\twithout search:\t{}".format(root.lower_bound, init_lb)
+    print "upper bound value:\t{}\twithout search:\t{}".format(root.upper_bound, init_ub)
+
     return root.best_lb_action(), num_expanded, sub_optimality
 
-
-
+def lrtdp(mdp, start_state, tolerance=eps):
     
+    root = SearchNode(start_state, mdp, use_wi=use_wi)
+    explored_nodes = {start_state: root}

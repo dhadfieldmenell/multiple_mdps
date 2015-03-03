@@ -1,4 +1,7 @@
-from mdp_gen import gen_multi_reward_params, multi_reward_grid_mdp, multiple_grid_mdp, write_spudd_model, multiple_bernoulli_mdp
+from __future__ import division
+
+from mdp_gen import gen_multi_reward_params, multi_reward_grid_mdp, multiple_grid_mdp, \
+    write_spudd_model, multiple_bernoulli_mdp, multiple_r_and_d_mdp
 from mdp_base import MultipleMDP
 from factored_alp import factored_alp, eval_approx_qf
 import search
@@ -13,6 +16,8 @@ import time
 import numpy as np
 import util as u
 import subprocess
+
+import lrtdp
 n_mdp_vals = [2, 6, 10, 14]
 n_gold_loc_vals = [1, 3, 5, 7]
 
@@ -22,6 +27,12 @@ SPUDD_OUTF = 'data/UAI/comparison_timing.h5'
 
 def compare(outf = SPUDD_OUTF, n_trials=30, mdp_type='grid'):
     n_mdps = [2, 3, 4, 5, 6]#, 7, 8, 9, 10, 11, 12, 13, 14]
+
+    do_spudd = True
+    do_singh_cohn = True
+    do_lrtdp_wi = True
+    do_lrtdp_singh_cohn = True
+
     if mdp_type=='grid':
         params = {'n_gold_locs': 3,
                   'gamma': 0.9, 
@@ -33,31 +44,36 @@ def compare(outf = SPUDD_OUTF, n_trials=30, mdp_type='grid'):
                 'research_cost': (1, 3),
                 'gamma': 0.9}
         gen_mdp = multiple_bernoulli_mdp
+    elif mdp_type == 'r_and_d':
+        params = {'gamma': 0.9}
+        gen_mdp = multiple_r_and_d_mdp
+        n_mdps = [2, 5, 10, 20, 30, 50]
     outf = h5py.File(outf, 'a')
     if 'mdp_type' in outf:
         assert str(outf['mdp_type'][()]) == mdp_type
     else:
         outf['mdp_type'] = mdp_type
-    do_spudd = True
-    do_singh_cohn = True
     for n in n_mdps:
         if str(n) in outf:
             del outf[str(n)]
+        print "N:\t{}".format(n)
         result_g = outf.create_group(str(n))
         result_g['spudd_times']        = -1 * np.ones(n_trials)
         result_g['singh_cohn_times']   = -1 * np.ones(n_trials)
-        result_g['blsvi_times']        = -1 * np.ones(n_trials)
+        result_g['bbvi_times']        = -1 * np.ones(n_trials)
+        result_g['lrtdp_singh_cohn_times']        = -1 * np.ones(n_trials)
+        result_g['lrtdp_wi_times']        = -1 * np.ones(n_trials)
         result_g['num_expands']        = -1 * np.ones(n_trials)
         result_g['singh_cohn_expands'] = -1 * np.ones(n_trials)
         result_g['seeds']              = np.zeros((n_trials, n))
         result_g['states']             = np.zeros((n_trials, n))
-        result_g['size']               = gen_mdp(
-            [random.random() for _ in range(n)], **params).num_states
+        result_g['size']               = str(gen_mdp(
+            [random.random() for _ in range(n)], **params).num_states)
         for i in range(n_trials):
             mdp_seeds = [random.random() for _ in range(n)]
             result_g['seeds'][i, :] = mdp_seeds
             m = gen_mdp(mdp_seeds, **params)
-            start_state = random.randint(0, m.num_states)
+            # start_state = random.randint(0, m.num_states)
             start_state=0
             start_state = u.tuplify(m.index_to_factored_state(start_state))
             result_g['states'][i] = start_state
@@ -75,7 +91,7 @@ def compare(outf = SPUDD_OUTF, n_trials=30, mdp_type='grid'):
             time_taken = time.time() - start
             result_g['num_expands'][i] = num_expansions
             if sub_opt <= 10**-8:
-                result_g['blsvi_times'][i] = time_taken
+                result_g['bbvi_times'][i] = time_taken
                 print 'BBVI {}'.format(time_taken)
             else:
                 print "BBVI DID NOT CONVERGE"
@@ -112,15 +128,39 @@ def compare(outf = SPUDD_OUTF, n_trials=30, mdp_type='grid'):
                     print 'SINGH_COHN {}'.format(time_taken)
                 else:
                     print "SINGH_COHN DID NOT CONVERGE"
+
+            if do_lrtdp_wi:
+                start = time.time()
+                converged, best_a = lrtdp.lrtdp(m, start_state, max_iter=10000, use_wi=True)
+                time_taken = time.time() - start
+                if converged:
+                    result_g['lrtdp_wi_times'][i] = time_taken
+                    print "LRTDP_WI {}                             ".format(time_taken)
+                else:
+                    print "LRTDP_WI DID NOT CONVERGE"
+
+            if do_lrtdp_singh_cohn:
+                start = time.time()
+                converged, best_a = lrtdp.lrtdp(m, start_state, max_iter=10000, use_wi=False)
+                time_taken = time.time() - start
+                if converged:
+                    result_g['lrtdp_singh_cohn_times'][i] = time_taken
+                    print "LRTDP_SINGH_COHN {}                  ".format(time_taken)
+                else:
+                    print "LRTDP_SINGH_COHN DID NOT CONVERGE"
+                
+
         do_spudd = not np.all(result_g['spudd_times'][:] == -1)
         do_singh_cohn = not np.all(result_g['singh_cohn_times'][:] == -1)
+        do_lrtdp_wi = not np.all(result_g['lrtdp_wi_times'][:] == -1)
+        do_lrtdp_singh_cohn = not np.all(result_g['lrtdp_singh_cohn_times'][:] == -1)
 
             
 DEFAULT_MDP_PARAMS = {'n_gold_locs' : 5,
                       'gamma' : .9,
                       'dim' : 20}
 
-DEFAULT_NUM_ARMS = 10
+DEFAULT_NUM_ARMS = 4
 
 def do_single_run(num_trials, mdp = None, verbose=False):
     if mdp == None:
@@ -130,7 +170,7 @@ def do_single_run(num_trials, mdp = None, verbose=False):
     mdp.frontier_alg()
     mdp.compute_lb_mdp()
     total_expansions = []
-    start_states = [mdp.get_rand_state(wc_violations_only=False) for i in range(num_trials)]
+    start_states = [mdp.get_rand_state(wc_violations_only=True) for i in range(num_trials)]
     print "testing with {:4} states".format(float(mdp.num_states))
     for i, s in enumerate(start_states):
         print s
